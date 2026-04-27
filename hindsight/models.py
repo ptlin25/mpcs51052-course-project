@@ -32,7 +32,7 @@ class Pick:
 
 @dataclass
 class Gameweek:
-    id: int
+    round: int
     active_chip: Chip | None
     points: int
     points_on_bench: int
