@@ -1,14 +1,19 @@
 import asyncio
 from collections.abc import Coroutine
+from dataclasses import dataclass
 import httpx
-import time
 from typing import Any
 
 from .models import Position, Chip, Player, Pick, Gameweek
 
 
 NUM_GAMEWEEKS = 38
-TEAM_ID = 2926821  # temp
+
+
+@dataclass(frozen=True)
+class FPLData:
+    players: dict[int, Player]
+    gameweeks: list[Gameweek]
 
 
 async def _fetch_player(client: httpx.AsyncClient, player: Player) -> None:
@@ -44,11 +49,9 @@ async def fetch_players(batch_size: int = 20) -> dict[int, Player]:
     player_list = list(players.values())
     async with httpx.AsyncClient() as client:
         for i in range(0, len(player_list), batch_size):
-            tasks: list[Coroutine[Any, Any, None]] = [
-                _fetch_player(client, player)
-                for player in player_list[i : i + batch_size]
-            ]
-            await asyncio.gather(*tasks)
+            async with asyncio.TaskGroup() as tg:
+                for player in player_list[i : i + batch_size]:
+                    tg.create_task(_fetch_player(client, player))
 
     return players
 
@@ -91,10 +94,20 @@ async def fetch_gameweeks(team_id: int, batch_size: int = 20) -> list[Gameweek]:
     gameweeks: list[Gameweek] = []
     async with httpx.AsyncClient() as client:
         for i in range(1, NUM_GAMEWEEKS + 1, batch_size):
-            tasks: list[Coroutine[Any, Any, Gameweek | None]] = [
-                _fetch_gameweek(client, team_id, round)
-                for round in range(i, i + batch_size)
-            ]
-            gameweeks += [gw for gw in await asyncio.gather(*tasks) if gw is not None]
+            tasks: list[asyncio.Task[Gameweek | None]] = []
+            async with asyncio.TaskGroup() as tg:
+                for round in range(i, i + batch_size):
+                    tasks.append(
+                        tg.create_task(_fetch_gameweek(client, team_id, round))
+                    )
+
+            results: list[Gameweek | None] = [t.result() for t in tasks]
+            gameweeks += [r for r in results if r is not None]
 
     return sorted(gameweeks, key=lambda gw: gw.round)
+
+
+async def fetch_all(team_id: int) -> FPLData:
+    players = await fetch_players()
+    gameweeks = await fetch_gameweeks(team_id)
+    return FPLData(players, gameweeks)
