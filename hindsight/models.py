@@ -23,14 +23,17 @@ class Player:
     position: Position
     history: list[int]
 
+    def __hash__(self) -> int:
+        return self.id
 
-@dataclass
+
+@dataclass(frozen=True)
 class Pick:
-    player_id: int
+    player: Player
     multiplier: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class Gameweek:
     round: int
     active_chip: Chip | None
