@@ -1,5 +1,4 @@
 import asyncio
-from collections.abc import Coroutine
 from dataclasses import dataclass
 import httpx
 from typing import Any
@@ -16,24 +15,28 @@ class FPLData:
     gameweeks: list[Gameweek]
 
 
-async def _fetch_player(client: httpx.AsyncClient, player: Player) -> None:
+async def _fetch_player(
+    client: httpx.AsyncClient, sem: asyncio.Semaphore, player: Player
+) -> None:
     url: str = f"https://fantasy.premierleague.com/api/element-summary/{player.id}/"
 
-    while True:
-        response: httpx.Response = await client.get(url)
-        if response.status_code == 429:
-            print("rate limit hit")
-            await asyncio.sleep(1)
-            continue
-        break
+    async with sem:
+        while True:
+            response: httpx.Response = await client.get(url)
+            if response.status_code == 429:
+                print("Rate limit hit")
+                await asyncio.sleep(1)
+                continue
+            break
 
-    for match in response.json()["history"]:
-        gameweek: int = match["round"]
-        points: int = match["total_points"]
-        player.history[gameweek - 1] += points
+        for match in response.json()["history"]:
+            gameweek: int = match["round"]
+            points: int = match["total_points"]
+            player.history[gameweek - 1] += points
 
 
-async def fetch_players(batch_size: int = 20) -> dict[int, Player]:
+async def fetch_players(max_concurrency: int = 40) -> dict[int, Player]:
+
     players: dict[int, Player] = {}
     bootstrap_url: str = "https://fantasy.premierleague.com/api/bootstrap-static/"
     response: httpx.Response = httpx.get(bootstrap_url)
@@ -46,68 +49,75 @@ async def fetch_players(batch_size: int = 20) -> dict[int, Player]:
             history=[0] * NUM_GAMEWEEKS,
         )
 
-    player_list = list(players.values())
+    sem: asyncio.Semaphore = asyncio.Semaphore(max_concurrency)
     async with httpx.AsyncClient() as client:
-        for i in range(0, len(player_list), batch_size):
-            async with asyncio.TaskGroup() as tg:
-                for player in player_list[i : i + batch_size]:
-                    tg.create_task(_fetch_player(client, player))
+        async with asyncio.TaskGroup() as tg:
+            for player in players.values():
+                tg.create_task(_fetch_player(client, sem, player))
 
     return players
 
 
 async def _fetch_gameweek(
-    client: httpx.AsyncClient, team_id: int, round: int
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    team_id: int,
+    round: int,
+    players: dict[int, Player],
 ) -> Gameweek | None:
     url: str = (
         f"https://fantasy.premierleague.com/api/entry/{team_id}/event/{round}/picks/"
     )
 
-    while True:
-        response: httpx.Response = await client.get(url)
-        if response.status_code == 404:
-            return None
-        if response.status_code == 429:
-            print("rate limit hit")
-            await asyncio.sleep(1)
-            continue
+    async with sem:
+        while True:
+            response: httpx.Response = await client.get(url)
+            if response.status_code == 404:
+                return None
+            if response.status_code == 429:
+                print("Rate limit hit")
+                await asyncio.sleep(1)
+                continue
 
-        try:
-            data: dict[str, Any] = response.json()
-            active_chip: Chip | None = data["active_chip"]
-            points: int = data["entry_history"]["points"]
-            points_on_bench: int = data["entry_history"]["points_on_bench"]
+            try:
+                data: dict[str, Any] = response.json()
+                active_chip: Chip | None = data["active_chip"]
+                points: int = data["entry_history"]["points"]
+                points_on_bench: int = data["entry_history"]["points_on_bench"]
 
-            picks: list[Pick] = []
-            for pick in data["picks"]:
-                picks.append(
-                    Pick(player_id=pick["element"], multiplier=pick["multiplier"])
-                )
-            break
-        except KeyError:
-            continue
+                picks: list[Pick] = []
+                for pick in data["picks"]:
+                    player_id = pick["element"]
+                    picks.append(
+                        Pick(player=players[player_id], multiplier=pick["multiplier"])
+                    )
+                break
+            except KeyError:
+                continue
 
     return Gameweek(round, active_chip, points, points_on_bench, picks)
 
 
-async def fetch_gameweeks(team_id: int, batch_size: int = 20) -> list[Gameweek]:
-    gameweeks: list[Gameweek] = []
+async def fetch_gameweeks(
+    team_id: int, players: dict[int, Player], max_concurrency: int = 40
+) -> list[Gameweek]:
+    sem: asyncio.Semaphore = asyncio.Semaphore(max_concurrency)
     async with httpx.AsyncClient() as client:
-        for i in range(1, NUM_GAMEWEEKS + 1, batch_size):
-            tasks: list[asyncio.Task[Gameweek | None]] = []
-            async with asyncio.TaskGroup() as tg:
-                for round in range(i, i + batch_size):
-                    tasks.append(
-                        tg.create_task(_fetch_gameweek(client, team_id, round))
+        tasks: list[asyncio.Task[Gameweek | None]] = []
+        async with asyncio.TaskGroup() as tg:
+            for round in range(1, NUM_GAMEWEEKS + 1):
+                tasks.append(
+                    tg.create_task(
+                        _fetch_gameweek(client, sem, team_id, round, players)
                     )
+                )
 
-            results: list[Gameweek | None] = [t.result() for t in tasks]
-            gameweeks += [r for r in results if r is not None]
-
-    return sorted(gameweeks, key=lambda gw: gw.round)
+    return sorted(
+        [r for t in tasks if (r := t.result()) is not None], key=lambda gw: gw.round
+    )
 
 
 async def fetch_all(team_id: int) -> FPLData:
     players = await fetch_players()
-    gameweeks = await fetch_gameweeks(team_id)
+    gameweeks = await fetch_gameweeks(team_id, players)
     return FPLData(players, gameweeks)
