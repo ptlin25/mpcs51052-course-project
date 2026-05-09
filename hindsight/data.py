@@ -112,15 +112,14 @@ async def _fetch_gameweek(
 
         data: dict[str, Any] = response.json()
         active_chip: Chip | None = data["active_chip"]
-        points: int = data["entry_history"]["points"]
-        points_on_bench: int = data["entry_history"]["points_on_bench"]
+        transfers_cost: int = data["entry_history"]["event_transfers_cost"]
 
         picks: list[Pick] = []
         for pick in data["picks"]:
             player_id = pick["element"]
             picks.append(Pick(player=players[player_id], multiplier=pick["multiplier"]))
 
-    return Gameweek(round, active_chip, points, points_on_bench, picks)
+    return Gameweek(round, active_chip, transfers_cost, picks)
 
 
 async def fetch_gameweeks(

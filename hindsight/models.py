@@ -37,6 +37,5 @@ class Pick:
 class Gameweek:
     round: int
     active_chip: Chip | None
-    points: int
-    points_on_bench: int
+    transfers_cost: int
     picks: list[Pick]
