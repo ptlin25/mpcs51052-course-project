@@ -117,7 +117,7 @@ async def _fetch_gameweek(
         picks: list[Pick] = []
         for pick in data["picks"]:
             player_id = pick["element"]
-            picks.append(Pick(player=players[player_id], multiplier=pick["multiplier"]))
+            picks.append(Pick(player=players[player_id], multiplier=pick["multiplier"], position=pick["position"]))
 
     return Gameweek(round, active_chip, transfers_cost, picks)
 

@@ -31,6 +31,7 @@ class Player:
 class Pick:
     player: Player
     multiplier: int
+    position: int
 
 
 @dataclass(frozen=True)
