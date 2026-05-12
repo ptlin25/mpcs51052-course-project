@@ -1,18 +1,11 @@
 import asyncio
 import httpx
-from dataclasses import dataclass
 from typing import Any
 
 from .models import Position, Chip, Player, Pick, Gameweek
 
 
 NUM_GAMEWEEKS = 38
-
-
-@dataclass(frozen=True)
-class FPLData:
-    players: dict[int, Player]
-    gameweeks: dict[int, Gameweek]
 
 
 async def _get_with_retry(
@@ -66,7 +59,7 @@ async def _fetch_player(
             player.history[gameweek - 1] += points
 
 
-async def fetch_players(max_concurrency: int = 40) -> dict[int, Player]:
+async def _fetch_players(max_concurrency: int = 40) -> dict[int, Player]:
     """Fetch all FPL players and their per-gameweek point history, keyed by player ID."""
     players: dict[int, Player] = {}
     bootstrap_url: str = "https://fantasy.premierleague.com/api/bootstrap-static/"
@@ -128,7 +121,7 @@ async def _fetch_gameweek(
     return Gameweek(round, active_chip, transfers_cost, picks)
 
 
-async def fetch_gameweeks(
+async def _fetch_gameweeks(
     team_id: int, players: dict[int, Player], max_concurrency: int = 40
 ) -> dict[int, Gameweek]:
     """Fetch picks and score data for team_id for all rounds"""
@@ -146,8 +139,8 @@ async def fetch_gameweeks(
     return {gw.round: gw for t in tasks if (gw := t.result()) is not None}
 
 
-async def fetch_all(team_id: int) -> FPLData:
+async def fetch(team_id: int) -> dict[int, Gameweek]:
     """Fetch all player and gameweek data for the given team."""
-    players = await fetch_players()
-    gameweeks = await fetch_gameweeks(team_id, players)
-    return FPLData(players, gameweeks)
+    players: dict[int, Player] = await _fetch_players()
+    gameweeks: dict[int, Gameweek] = await _fetch_gameweeks(team_id, players)
+    return gameweeks
