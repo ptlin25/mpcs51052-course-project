@@ -25,6 +25,9 @@ class Player:
 
     def __hash__(self) -> int:
         return self.id
+    
+    def get_gameweek_points(self, round: int):
+        return self.history[round - 1]
 
 
 @dataclass(frozen=True)
