@@ -18,9 +18,12 @@ class GameweekAnalysis:
     transfers_cost: int
     total_squad_points: int
     captain: PlayerPoints | None
-    optimal_captain: PlayerPoints
     starters: frozenset[PlayerPoints]
     optimal_starters: frozenset[PlayerPoints]
+
+    @property
+    def captain_points(self) -> int:
+        return self.captain.points if self.captain else 0
 
     @property
     def raw_points(self) -> int:
@@ -45,8 +48,15 @@ class GameweekAnalysis:
         )
 
     @property
+    def optimal_captain(self) -> PlayerPoints:
+        best = max(self.optimal_starters, key=lambda p: p.points)
+        if self.captain and best.points == self.captain.points:
+            return self.captain
+        return best
+
+    @property
     def actual_points_no_chips(self) -> int:
-        return self.raw_points + (self.captain.points if self.captain else 0)
+        return self.raw_points + self.captain_points
 
     @property
     def optimal_points_no_chips(self) -> int:
@@ -169,11 +179,6 @@ class Analyzer:
                 captain = pp
 
         optimal_starters: set[PlayerPoints] = self._get_optimal_starters(round)
-        # optimal captain is the player that scored the most points
-        optimal_captain: PlayerPoints = max(optimal_starters, key=lambda p: p.points)
-        # If the actual captain scored the same number of points, keep the actual captain
-        if captain and optimal_captain.points == captain.points:
-            optimal_captain = captain
 
         return GameweekAnalysis(
             round=round,
@@ -181,7 +186,6 @@ class Analyzer:
             transfers_cost=gameweek.transfers_cost,
             total_squad_points=total_squad_points,
             captain=captain,
-            optimal_captain=optimal_captain,
             starters=frozenset(starters),
             optimal_starters=frozenset(optimal_starters),
         )
@@ -246,7 +250,7 @@ class Analyzer:
                 if a.active_chip not in {Chip.FH, Chip.WC}
             }
             bb_scores: dict[int, int] = {
-                gw: a.total_squad_points - a.optimal_raw_points
+                gw: a.points_on_optimal_bench
                 for gw, a in half_analyses.items()
                 if a.active_chip not in {Chip.FH, Chip.WC}
             }
@@ -272,9 +276,7 @@ class Analyzer:
         }
 
         actual_chip_timing: dict[int, Chip] = self._get_actual_chip_timing()
-        optimal_chip_timing: dict[int, Chip] = self._get_optimal_chip_timing(
-            gw_analyses
-        )
+        optimal_chip_timing: dict[int, Chip] = self._get_optimal_chip_timing(gw_analyses)
 
         actual_chip_usage: dict[int, ChipUsage] = {}
         optimal_selection_chip_usage: dict[int, ChipUsage] = {}
@@ -296,13 +298,6 @@ class Analyzer:
             gw_optimal: int = analysis.optimal_raw_points + optimal_captain_points
             optimal_points_no_chips += gw_optimal
 
-            points_on_actual_bench: int = (
-                analysis.total_squad_points - analysis.raw_points
-            )
-            points_on_optimal_bench: int = (
-                analysis.total_squad_points - analysis.optimal_raw_points
-            )
-
             if gw in actual_chip_timing:
                 match chip := actual_chip_timing[gw]:
                     case Chip.TC:
@@ -314,10 +309,10 @@ class Analyzer:
                         )
                     case Chip.BB:
                         actual_chip_usage[gw] = ChipUsage(
-                            chip=chip, chip_bonus=points_on_actual_bench
+                            chip=chip, chip_bonus=analysis.points_on_actual_bench
                         )
                         optimal_selection_chip_usage[gw] = ChipUsage(
-                            chip=chip, chip_bonus=points_on_optimal_bench
+                            chip=chip, chip_bonus=analysis.points_on_optimal_bench
                         )
                     case Chip.FH | Chip.WC:
                         actual_chip_usage[gw] = ChipUsage(chip=chip, chip_bonus=0)
@@ -333,7 +328,7 @@ class Analyzer:
                         )
                     case Chip.BB:
                         optimal_chip_usage[gw] = ChipUsage(
-                            chip=chip, chip_bonus=points_on_optimal_bench
+                            chip=chip, chip_bonus=analysis.points_on_optimal_bench
                         )
                     case Chip.FH | Chip.WC:
                         optimal_chip_usage[gw] = ChipUsage(chip=chip, chip_bonus=0)
