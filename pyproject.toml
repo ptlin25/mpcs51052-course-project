@@ -11,6 +11,13 @@ dependencies = [
     "requests>=2.33.1",
 ]
 
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hindsight*"]
+
 [tool.ruff.lint]
 select = [
   "E", # pycodestyle errors - handles basic Python style
