@@ -256,7 +256,7 @@ class Analyzer:
 
     def _get_optimal_assignment(
         self, tc_scores: dict[int, int], bb_scores: dict[int, int]
-    ) -> tuple[int, int]:
+    ) -> tuple[int | None, int | None]:
         """
         Returns the optimal Triple Captain and Bench Boost chip timing.
 
@@ -268,8 +268,12 @@ class Analyzer:
         the bonus points as a tuple (best Triple Captain gw, best
         Bench Boost gw).
 
+        Returns None for a chip if no valid gameweek exists for it.
         Note: only one chip can be played in a gameweek.
         """
+        if not tc_scores or not bb_scores:
+            return None, None
+
         best_tc_gw: int = max(tc_scores, key=lambda gw: tc_scores[gw])
         best_bb_gw: int = max(bb_scores, key=lambda gw: bb_scores[gw])
 
@@ -279,23 +283,20 @@ class Analyzer:
 
         # Conflict — try both non-conflicting combinations
         conflicting_gw: int = best_tc_gw
+        remaining_tc = [gw for gw in tc_scores if gw != conflicting_gw]
+        remaining_bb = [gw for gw in bb_scores if gw != conflicting_gw]
+        
+        if not remaining_tc or not remaining_bb:
+            # Only one gameweek available: assign to whichever chip benefits more
+            if tc_scores[conflicting_gw] >= bb_scores[conflicting_gw]:
+                return conflicting_gw, None
+            return None, conflicting_gw
+
         candidates = [
             # TC on best, BB on second best BB gw
-            (
-                conflicting_gw,
-                max(
-                    [gw for gw in bb_scores if gw != conflicting_gw],
-                    key=lambda k: bb_scores[k],
-                ),
-            ),
+            (conflicting_gw, max(remaining_bb, key=lambda k: bb_scores[k])),
             # BB on best, TC on second best TC gw
-            (
-                max(
-                    [gw for gw in tc_scores if gw != conflicting_gw],
-                    key=lambda k: tc_scores[k],
-                ),
-                conflicting_gw,
-            ),
+            (max(remaining_tc, key=lambda k: tc_scores[k]), conflicting_gw),
         ]
 
         # return the best assignment
@@ -346,8 +347,10 @@ class Analyzer:
             }
 
             best_tc_gw, best_bb_gw = self._get_optimal_assignment(tc_scores, bb_scores)
-            optimal_chip_timing[best_tc_gw] = Chip.TC
-            optimal_chip_timing[best_bb_gw] = Chip.BB
+            if best_tc_gw is not None:
+                optimal_chip_timing[best_tc_gw] = Chip.TC
+            if best_bb_gw is not None:
+                optimal_chip_timing[best_bb_gw] = Chip.BB
 
         first_half: dict[int, GameweekAnalysis] = {
             gw: a for gw, a in gw_analyses.items() if gw <= 19
