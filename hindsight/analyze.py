@@ -356,7 +356,8 @@ class Analyzer:
             gw: a for gw, a in gw_analyses.items() if gw > 19
         }
         _get_optimal_chip_timing_half(first_half)
-        _get_optimal_chip_timing_half(second_half)
+        if second_half:
+            _get_optimal_chip_timing_half(second_half)
 
         return optimal_chip_timing
 
