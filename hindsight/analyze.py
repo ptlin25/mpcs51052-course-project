@@ -285,7 +285,7 @@ class Analyzer:
         conflicting_gw: int = best_tc_gw
         remaining_tc = [gw for gw in tc_scores if gw != conflicting_gw]
         remaining_bb = [gw for gw in bb_scores if gw != conflicting_gw]
-        
+
         if not remaining_tc or not remaining_bb:
             # Only one gameweek available: assign to whichever chip benefits more
             if tc_scores[conflicting_gw] >= bb_scores[conflicting_gw]:
