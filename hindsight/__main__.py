@@ -1,11 +1,12 @@
+import asyncio
 import sys
 
+from hindsight.data import fetch
 from hindsight.models import Chip
 from hindsight.analyze import (
     Analyzer,
     GameweekAnalysis,
     SeasonAnalysis,
-    ChipUsage,
     PlayerPoints,
 )
 
@@ -84,13 +85,13 @@ Changes:
 """
 
 
-def main() -> None:
+async def main() -> None:
     if len(sys.argv) < 2:
         print("usage: hindsight <team_id>", file=sys.stderr)
         sys.exit(1)
 
     team_id: int = int(sys.argv[1])
-    analyzer: Analyzer = Analyzer(team_id)
+    analyzer: Analyzer = Analyzer(await fetch(team_id))
     analysis: SeasonAnalysis = analyzer.analyze_season()
     print(f"total transfers cost {analysis.total_transfers_cost}")
     print(f"actual points no chips {analysis.actual_points_no_chips}")
@@ -125,4 +126,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
