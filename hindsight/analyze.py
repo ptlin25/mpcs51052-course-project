@@ -140,12 +140,20 @@ class SeasonAnalysis:
     @property
     def optimal_selection_total_points(self) -> int:
         """Total points after selection optimizations"""
-        return self.optimal_points_no_chips + self.optimal_selection_chip_bonus
+        return (
+            self.optimal_points_no_chips
+            + self.optimal_selection_chip_bonus
+            - self.total_transfers_cost
+        )
 
     @property
     def optimal_total_points(self) -> int:
         """Total points after selection and chip optimizations"""
-        return self.optimal_points_no_chips + self.optimal_chip_bonus
+        return (
+            self.optimal_points_no_chips
+            + self.optimal_chip_bonus
+            - self.total_transfers_cost
+        )
 
     def actual_chip_bonus_for(self, round: int) -> int:
         """Actual chip bonus for the gameweek"""
@@ -169,7 +177,9 @@ class Analyzer:
     def __init__(self, gameweeks: dict[int, Gameweek]):
         self._gameweeks = gameweeks
 
-    def _get_optimal_starters(self, round: int) -> set[PlayerPoints]:
+    def _get_optimal_starters(
+        self, round: int, actual_starters: set[PlayerPoints]
+    ) -> set[PlayerPoints]:
         """
         Returns the optimal starting 11
 
@@ -180,6 +190,9 @@ class Analyzer:
         and then the remaining 4 players are chosen from the highest-
         scoring, remaining outfielders (defenders, midfielders, or
         forwards).
+
+        Among all optimal selections with the same total points, the
+        one with the fewest changes from actual_starters is preferred.
         """
         gameweek: Gameweek = self._gameweeks[round]
 
@@ -191,9 +204,12 @@ class Analyzer:
             points: int = player.get_gameweek_points(round)
             by_pos[pos].append(PlayerPoints(player, points))
 
-        # sort by points scored descending
+        # sort by points descending; break ties by preferring actual starters
+        def sort_key(pp: PlayerPoints) -> tuple[int, int]:
+            return (-pp.points, 0 if pp in actual_starters else 1)
+
         for pos in by_pos:
-            by_pos[pos].sort(key=lambda pd: -pd.points)
+            by_pos[pos].sort(key=sort_key)
 
         # fill minimums: 1 GKP, 3 DEF, 2 MID, 1 FWD
         selected: list[PlayerPoints] = (
@@ -209,7 +225,7 @@ class Analyzer:
             + by_pos[Position.MID][2:]
             + by_pos[Position.FWD][1:]
         )
-        selected += sorted(remaining, key=lambda pp: pp.points, reverse=True)[:4]
+        selected += sorted(remaining, key=sort_key)[:4]
         return set(selected)
 
     def analyze_gameweek(self, round: int) -> GameweekAnalysis:
@@ -229,7 +245,9 @@ class Analyzer:
             if pick.multiplier >= 2:
                 captain = pp
 
-        optimal_starters: set[PlayerPoints] = self._get_optimal_starters(round)
+        optimal_starters: set[PlayerPoints] = self._get_optimal_starters(
+            round, starters
+        )
 
         return GameweekAnalysis(
             round=round,
